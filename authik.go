@@ -13,7 +13,7 @@ import (
 	"github.com/lestrrat-go/jwx/jwt"
 )
 
-const version = "0.1.0"
+const version = "0.1.1"
 const jwksDefaultCacheDuration = time.Hour
 
 type Client struct {
@@ -66,19 +66,22 @@ func (client *Client) VerifySessionToken(token string) (*SessionToken, error) {
 		client.cachedJWKS = &cachedJWKS{}
 	}
 
-	// Construct JWKS
-	jwks := jwk.NewSet()
-	_, err := client.request(http.MethodGet, "/jwks", nil, &jwks)
-	if err != nil {
-		return nil, err
+	// Fetch JWKS if needed
+	if client.cachedJWKS.jwks == nil {
+		jwks := jwk.NewSet()
+		_, err := client.request(http.MethodGet, "/jwks", nil, &jwks)
+		if err != nil {
+			return nil, err
+		}
+		client.cachedJWKS = &cachedJWKS{
+			jwks:      &jwks,
+			expiresAt: time.Now().Add(jwksDefaultCacheDuration),
+		}
 	}
-	client.cachedJWKS = &cachedJWKS{
-		jwks:      &jwks,
-		expiresAt: time.Now().Add(jwksDefaultCacheDuration),
-	}
+	jwks := client.cachedJWKS.jwks
 
 	// Verify token
-	payload, err := jwt.ParseString(token, jwt.WithValidate(true), jwt.WithKeySet(jwks))
+	payload, err := jwt.ParseString(token, jwt.WithValidate(true), jwt.WithKeySet(*jwks))
 	if err != nil {
 		if jwt.IsValidationError(err) {
 			switch {
